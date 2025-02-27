@@ -1,12 +1,25 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "com.machadothi.templateapp"
     compileSdk = 35
+
+    val localProperties = Properties()
+    try {
+        localProperties.load(FileInputStream("local.properties"))
+    } catch (ignored: Exception) {
+        // It means it couldn't find the local.properties file
+    }
 
     defaultConfig {
         applicationId = "com.machadothi.templateapp"
@@ -16,6 +29,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "SERVER_URL",
+            "\"${localProperties.getProperty("server.url")}\""
+        )
     }
 
     buildTypes {
@@ -36,24 +54,51 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
+// The libraries that you can use
 dependencies {
 
+    // Implementation allows you to use the dependency
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    // platform + bom is a bill of materials means that it contains a bunch of version
+    // that compatible with each other so you don't have to define versions 1 by 1
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    // testImplementation means that this dep will be only used in Tests (Unit Tests)
     testImplementation(libs.junit)
+    // same as above but in AndroidTest which ones are the UI Tests
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    // debugImplementation when you are building the app in DebugMode
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.kotlinx.serialization.json)
+
+    // Dependency Injection
+    implementation(libs.hilt.android)
+    // ksp - Kotlin Symbol Processor
+    ksp(libs.hilt.compiler)
+
+    // Network communication library
+    implementation(libs.retrofit)
+    // Converter for DTOs
+    implementation(libs.retrofit.converter.serializationx)
+    // Logger for networks
+    implementation(libs.okhttp.logging.interceptor)
+
+    // Graph library
+    implementation (libs.compose.charts)
 }
