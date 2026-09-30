@@ -3,7 +3,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
@@ -49,9 +48,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -74,6 +70,8 @@ dependencies {
     implementation(libs.androidx.material3)
     // testImplementation means that this dep will be only used in Tests (Unit Tests)
     testImplementation(libs.junit)
+    // Serves the firmware's real recorded API responses to the app's HTTP layer
+    testImplementation(libs.okhttp.mockwebserver)
     // same as above but in AndroidTest which ones are the UI Tests
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -101,4 +99,7 @@ dependencies {
 
     // Graph library
     implementation (libs.compose.charts)
+
+    // Heliostat: remembers the board's address and the WiFi password it was given
+    implementation(libs.androidx.datastore.preferences)
 }

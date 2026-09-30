@@ -2,15 +2,23 @@ package com.machadothi.templateapp.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.machadothi.templateapp.ui.screen.address.AddressScreen
+import com.machadothi.templateapp.ui.screen.dashboard.DashboardScreen
+import com.machadothi.templateapp.ui.screen.devicescan.DeviceScanScreen
 import com.machadothi.templateapp.ui.screen.filter.FiltersScreen
 import com.machadothi.templateapp.ui.screen.graph.GraphScreen
 import com.machadothi.templateapp.ui.screen.graph.GraphType
 import com.machadothi.templateapp.ui.screen.graph.humidity.HumidityGraphScreen
 import com.machadothi.templateapp.ui.screen.graph.temperature.TemperatureGraphScreen
+import com.machadothi.templateapp.ui.screen.jog.JogScreen
+import com.machadothi.templateapp.ui.screen.provision.ProvisionScreen
 import com.machadothi.templateapp.ui.screen.sensor.SensorsScreen
+import com.machadothi.templateapp.ui.screen.start.StartScreen
+import com.machadothi.templateapp.ui.screen.target.TargetScreen
 
 @Composable
 fun NavigationScreen(
@@ -19,9 +27,43 @@ fun NavigationScreen(
     val navController = rememberNavController()
     NavHost(
         navController = navController,
-        startDestination = NavRoutes.Sensors,
+        startDestination = NavRoutes.Start,
         modifier = modifier
     ) {
+        composable<NavRoutes.Start> {
+            StartScreen(
+                onProvisioned = { navController.replaceWith(NavRoutes.Dashboard) },
+                onNotProvisioned = { navController.replaceWith(NavRoutes.DeviceScan) },
+            )
+        }
+        composable<NavRoutes.DeviceScan> {
+            DeviceScanScreen(
+                onDeviceSelected = { navController.navigate(NavRoutes.Provision(it.address)) },
+                onUseAddress = { navController.navigate(NavRoutes.Address) },
+            )
+        }
+        composable<NavRoutes.Provision> {
+            ProvisionScreen(onDone = { navController.replaceWith(NavRoutes.Dashboard) })
+        }
+        composable<NavRoutes.Address> {
+            AddressScreen(onDone = { navController.replaceWith(NavRoutes.Dashboard) })
+        }
+        composable<NavRoutes.Dashboard> {
+            DashboardScreen(
+                onJog = { navController.navigate(NavRoutes.Jog) },
+                onTarget = { navController.navigate(NavRoutes.Target) },
+                onSetupAgain = { navController.replaceWith(NavRoutes.DeviceScan) },
+                onChangeAddress = { navController.navigate(NavRoutes.Address) },
+            )
+        }
+        composable<NavRoutes.Jog> {
+            JogScreen(onDone = { navController.popBackStack() })
+        }
+        composable<NavRoutes.Target> {
+            TargetScreen(onJog = { navController.navigate(NavRoutes.Jog) })
+        }
+
+        // The original sensor demo.
         composable<NavRoutes.Sensors> {
             SensorsScreen(
                 onFiltersSelected = {
@@ -46,5 +88,13 @@ fun NavigationScreen(
         composable<NavRoutes.Graph.Temperature> {
             TemperatureGraphScreen()
         }
+    }
+}
+
+/** Navigate and clear the whole back stack: Back should not return to setup. */
+private fun NavHostController.replaceWith(route: Any) {
+    navigate(route) {
+        popUpTo(graph.id) { inclusive = true }
+        launchSingleTop = true
     }
 }
