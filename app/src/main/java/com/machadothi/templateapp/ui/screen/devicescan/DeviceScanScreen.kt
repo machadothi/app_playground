@@ -28,7 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +64,7 @@ import javax.inject.Inject
 fun DeviceScanScreen(
     onDeviceSelected: (DiscoveredDevice) -> Unit,
     onUseAddress: () -> Unit,
+    onBack: (() -> Unit)? = null,
     viewModel: DeviceScanViewModel = hiltViewModel(),
 ) {
     PermissionGate {
@@ -78,6 +79,7 @@ fun DeviceScanScreen(
                 onDeviceSelected(it)
             },
             onUseAddress = onUseAddress,
+            onBack = onBack,
         )
     }
 }
@@ -87,8 +89,11 @@ fun DeviceScanContent(
     state: DeviceScanUiState,
     onDeviceSelected: (DiscoveredDevice) -> Unit,
     onUseAddress: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
-    Scaffold(topBar = { HeliostatTopBar(title = "Find your heliostat", subtitle = "Over Bluetooth") }) { padding ->
+    Scaffold(
+        topBar = { HeliostatTopBar(title = "Find your heliostat", subtitle = "Over Bluetooth", onBack = onBack) },
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -126,7 +131,9 @@ fun DeviceScanContent(
                 }
             }
 
-            TextButton(onClick = onUseAddress, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            // The way out when the board is already on WiFi (Bluetooth off): make it
+            // a real button, not a footnote -- otherwise this screen is a dead end.
+            OutlinedButton(onClick = onUseAddress, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Already on WiFi? Enter its address")
             }
         }
@@ -175,9 +182,9 @@ private fun DeviceCard(device: DiscoveredDevice, onClick: () -> Unit) {
     }
 }
 
-/** A sun sending out slow rings: "searching". */
+/** A sun sending out slow rings: "searching". Shared with the network search. */
 @Composable
-private fun Radar(modifier: Modifier, compact: Boolean) {
+internal fun Radar(modifier: Modifier, compact: Boolean) {
     val transition = rememberInfiniteTransition(label = "radar")
     val phase by transition.animateFloat(
         initialValue = 0f,

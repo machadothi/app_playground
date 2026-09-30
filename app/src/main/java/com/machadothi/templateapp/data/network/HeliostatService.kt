@@ -35,6 +35,9 @@ interface HeliostatService {
 
     @POST("/api/location")
     suspend fun setLocation(@Body body: LocationRequest): JsonObject
+
+    @POST("/api/imu/level")
+    suspend fun setImuLevel(): JsonObject
 }
 
 // --- requests ------------------------------------------------------------------------
@@ -72,6 +75,12 @@ data class TelemetryResponse(
     val latched: String? = null,
     val volts: List<Double?> = emptyList(),
     val temp_c: List<Int?> = emptyList(),
+    /** Base tilt from the MPU6050, degrees from level (or from the boot attitude until calibrated). */
+    val tilt_deg: Double? = null,
+    /** Acceleration magnitude in g: 1.0 at rest, more when shaken. */
+    val accel_g: Double? = null,
+    /** Whether level has been set; null when there is no IMU. */
+    val imu_calibrated: Boolean? = null,
 )
 
 @Serializable
@@ -94,6 +103,8 @@ data class StatusResponse(
     @Serializable
     data class Device(
         val fw: String = "?", val name: String = "?", val sim: Boolean = false,
+        /** Stable id from the board's MAC (firmware with network discovery; null before). */
+        val id: String? = null,
         val mem_free: Int? = null, val uptime_s: Double? = null,
     )
 

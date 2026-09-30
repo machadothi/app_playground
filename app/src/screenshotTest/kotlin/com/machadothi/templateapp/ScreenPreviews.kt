@@ -8,14 +8,18 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.machadothi.templateapp.ble.DiscoveredDevice
 import com.machadothi.templateapp.ble.VisibleNetwork
+import com.machadothi.templateapp.data.local.Remembered
 import com.machadothi.templateapp.data.network.StatusResponse
 import com.machadothi.templateapp.data.network.TelemetryResponse
+import com.machadothi.templateapp.discovery.FoundHeliostat
 import com.machadothi.templateapp.ui.component.SafetyBarContent
 import com.machadothi.templateapp.ui.permission.Explain
 import com.machadothi.templateapp.ui.screen.dashboard.DashboardContent
 import com.machadothi.templateapp.ui.screen.dashboard.DashboardUiState
 import com.machadothi.templateapp.ui.screen.devicescan.DeviceScanContent
 import com.machadothi.templateapp.ui.screen.devicescan.DeviceScanUiState
+import com.machadothi.templateapp.ui.screen.find.FindContent
+import com.machadothi.templateapp.ui.screen.find.FindUiState
 import com.machadothi.templateapp.ui.screen.jog.JogContent
 import com.machadothi.templateapp.ui.screen.provision.ProvisionContent
 import com.machadothi.templateapp.ui.screen.provision.ProvisionUiState
@@ -29,6 +33,7 @@ private val TRACKING = TelemetryResponse(
     sun = listOf(164.9, 61.3), plan = listOf(175.1, 35.9), pos = listOf(174.9, 35.7),
     moving = listOf(false, false), beam = listOf(179.4, 10.2), efficiency = 0.897,
     trips = emptyList(), latched = null, volts = listOf(12.3, 9.9), temp_c = listOf(25, 24),
+    tilt_deg = 0.12, accel_g = 0.99, imu_calibrated = false,
 )
 private val STATUS = StatusResponse(
     mode = "track", intent = "track", time_valid = true,
@@ -41,7 +46,7 @@ private val SAFETY = @Composable { SafetyBarContent(message = null, onMode = {})
 @Composable
 private fun Dashboard(state: DashboardUiState, status: StatusResponse? = STATUS) = DashboardContent(
     state = state, status = status, actionMessage = null, onMode = {}, onClearFault = {}, onJog = {},
-    onTarget = {}, onSendTime = {}, onSendLocation = {}, onChangeAddress = {}, onSetupAgain = {},
+    onTarget = {}, onSendTime = {}, onSendLocation = {}, onSetLevel = {}, onFind = {}, onSetupAgain = {},
     bottomBar = SAFETY,
 )
 
@@ -76,10 +81,66 @@ fun DashboardFault() = MyApplicationTheme(darkTheme = true) {
 }
 
 @PreviewTest
+@Preview(name = "dashboard_servo_silent", widthDp = W, heightDp = H, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun DashboardServoSilent() = MyApplicationTheme(darkTheme = true) {
+    Dashboard(DashboardUiState.Live(TRACKING.copy(mode = "idle", intent = "idle", volts = listOf(null, null)), "192.168.50.105"))
+}
+
+@PreviewTest
 @Preview(name = "dashboard_unreachable", widthDp = W, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 fun DashboardUnreachable() = MyApplicationTheme(darkTheme = true) {
     Dashboard(DashboardUiState.Unreachable("Can't reach the heliostat (timeout)", "192.168.50.77"), status = null)
+}
+
+@PreviewTest
+@Preview(name = "dashboard_network_blocked", widthDp = W, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun DashboardNetworkBlocked() = MyApplicationTheme(darkTheme = true) {
+    Dashboard(DashboardUiState.Unreachable("blocked", "192.168.50.105", networkBlocked = true), status = null)
+}
+
+@PreviewTest
+@Preview(name = "dashboard_reconnecting", widthDp = W, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun DashboardReconnecting() = MyApplicationTheme(darkTheme = true) {
+    Dashboard(DashboardUiState.Live(TRACKING, "192.168.50.105", reconnecting = true))
+}
+
+private val FOUND = listOf(
+    FoundHeliostat("84cca85ed290", "my_heliostat", "192.168.50.105", "0.1.0", "idle"),
+    FoundHeliostat("a0b1c2d3e4f5", "garden", "192.168.50.131", "0.1.0", "track"),
+)
+
+@PreviewTest
+@Preview(name = "find_searching", widthDp = W, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun FindSearching() = MyApplicationTheme(darkTheme = true) {
+    FindContent(
+        FindUiState(searching = true, remembered = Remembered("192.168.50.105", "84cca85ed290", "my_heliostat")),
+        onPick = {}, onSearchAgain = {}, onOpenRemembered = {}, onSetUpNew = {}, onEnterAddress = {},
+    )
+}
+
+@PreviewTest
+@Preview(name = "find_several", widthDp = W, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun FindSeveral() = MyApplicationTheme(darkTheme = true) {
+    FindContent(
+        FindUiState(searching = false, found = FOUND, remembered = Remembered("192.168.50.105", "84cca85ed290", "my_heliostat")),
+        onPick = {}, onSearchAgain = {}, onOpenRemembered = {}, onSetUpNew = {}, onEnterAddress = {},
+    )
+}
+
+@PreviewTest
+@Preview(name = "find_none", widthDp = W, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun FindNone() = MyApplicationTheme(darkTheme = true) {
+    FindContent(
+        FindUiState(searching = false, remembered = Remembered("192.168.50.105", "84cca85ed290", "my_heliostat")),
+        onPick = {}, onSearchAgain = {}, onOpenRemembered = {}, onSetUpNew = {}, onEnterAddress = {},
+    )
 }
 
 @PreviewTest

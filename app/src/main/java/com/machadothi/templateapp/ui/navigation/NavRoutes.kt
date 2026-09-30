@@ -6,9 +6,12 @@ object NavRoutes {
 
     // --- heliostat -------------------------------------------------------------------
 
-    /** Decides: dashboard if a heliostat is set up on this phone, else device scan. */
+    /**
+     * Finds heliostats on the WiFi network. [auto]: connect without asking to the
+     * one this phone used last, or to the only one there (the app's start).
+     */
     @Serializable
-    data object Start
+    data class Find(val auto: Boolean = true)
 
     @Serializable
     data object DeviceScan

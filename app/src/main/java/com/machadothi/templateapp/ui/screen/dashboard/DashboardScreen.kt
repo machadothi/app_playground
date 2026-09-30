@@ -1,5 +1,8 @@
 package com.machadothi.templateapp.ui.screen.dashboard
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,8 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Bluetooth
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MyLocation
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -64,7 +69,8 @@ fun DashboardScreen(
     onJog: () -> Unit,
     onTarget: () -> Unit,
     onSetupAgain: () -> Unit,
-    onChangeAddress: () -> Unit,
+    /** Open the network search; [auto] reconnects by itself if the heliostat is found. */
+    onFind: (auto: Boolean) -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     DisposableEffect(Unit) {
@@ -81,8 +87,11 @@ fun DashboardScreen(
         onTarget = onTarget,
         onSendTime = viewModel::sendTime,
         onSendLocation = viewModel::sendLocation,
-        onChangeAddress = onChangeAddress,
-        onSetupAgain = { viewModel.forget(onSetupAgain) },
+        onSetLevel = viewModel::setLevel,
+        onFind = onFind,
+        // The saved address is kept: a successful setup replaces it, and backing
+        // out of setup must not leave the app with no heliostat at all.
+        onSetupAgain = onSetupAgain,
     )
 }
 
@@ -97,7 +106,8 @@ fun DashboardContent(
     onTarget: () -> Unit,
     onSendTime: () -> Unit,
     onSendLocation: () -> Unit,
-    onChangeAddress: () -> Unit,
+    onSetLevel: () -> Unit,
+    onFind: (auto: Boolean) -> Unit,
     onSetupAgain: () -> Unit,
     bottomBar: @Composable () -> Unit = { SafetyBar() },
 ) {
@@ -108,7 +118,7 @@ fun DashboardContent(
                 title = status?.device?.name ?: "Heliostat",
                 subtitle = listOfNotNull(host, status?.device?.fw?.let { "fw $it" }).joinToString("  ·  ")
                     .ifEmpty { null },
-                actions = { OverflowMenu(onSendTime, onSendLocation, onChangeAddress, onSetupAgain) },
+                actions = { OverflowMenu(onSendTime, onSendLocation, onSetLevel, { onFind(false) }, onSetupAgain) },
             )
         },
         bottomBar = bottomBar,
@@ -129,19 +139,24 @@ fun DashboardContent(
                     horizontalArrangement = Arrangement.Center,
                 ) { CircularProgressIndicator() }
 
-                is DashboardUiState.Unreachable -> Banner(
+                is DashboardUiState.Unreachable -> if (state.networkBlocked) {
+                    NetworkBlocked()
+                } else Banner(
                     title = "Can't reach the heliostat at ${state.host}",
-                    text = "${state.message}\n\nIs the phone on the same WiFi? If the heliostat changed " +
-                        "network, it turns Bluetooth back on after 5 minutes offline, or hold its BOOT " +
-                        "button for 3 seconds.",
+                    text = "${state.message}\n\nSearching the network finds it again if its address " +
+                        "changed. If the heliostat moved to a different WiFi, set it up again: it turns " +
+                        "Bluetooth back on after 5 minutes offline, or hold its BOOT button for 3 seconds.",
                     kind = BannerKind.Error,
                     actions = {
-                        Button(onClick = onSetupAgain) { Text("Set up again") }
-                        OutlinedButton(onClick = onChangeAddress) { Text("Enter address") }
+                        Button(onClick = { onFind(true) }) { Text("Search network") }
+                        OutlinedButton(onClick = onSetupAgain) { Text("Set up again") }
                     },
                 )
 
-                is DashboardUiState.Live -> Live(state.telemetry, status, onMode, onClearFault, onJog, onTarget)
+                is DashboardUiState.Live -> {
+                    if (state.reconnecting) Reconnecting()
+                    Live(state.telemetry, status, onMode, onClearFault, onJog, onTarget)
+                }
             }
             actionMessage?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -165,6 +180,18 @@ private fun Live(
             text = "$reason\n\nCheck the machine, then clear the fault.",
             kind = BannerKind.Error,
             actions = { Button(onClick = onClearFault) { Text("Clear fault") } },
+        )
+    }
+
+    // A servo that stops answering reads as null volts. By far the likeliest
+    // cause on the bench is its supply being off, so say that first.
+    val silent = t.volts.withIndex().filter { it.value == null }.map { if (it.index == 0) "azimuth" else "elevation" }
+    if (silent.isNotEmpty() && t.volts.isNotEmpty()) {
+        Banner(
+            title = "The ${silent.joinToString(" and ")} servo${if (silent.size > 1) "s aren't" else " isn't"} answering",
+            text = "Check that servo power is on and the bus cable is seated. The heliostat can't move " +
+                "or hold position until ${if (silent.size > 1) "they answer" else "it answers"}.",
+            kind = BannerKind.Warning,
         )
     }
 
@@ -224,6 +251,20 @@ private fun Live(
             unit = "V",
         )
     }
+    if (t.tilt_deg != null || t.accel_g != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricTile("Base tilt", t.tilt_deg?.let { "%.2f".format(it) } ?: "—", Modifier.weight(1f), unit = "°")
+            MetricTile("Acceleration", t.accel_g?.let { "%.2f".format(it) } ?: "—", Modifier.weight(1f), unit = "g")
+        }
+        if (t.imu_calibrated == false) {
+            Text(
+                "Tilt is measured from how the base sat at power-on. Once the heliostat is installed, " +
+                    "use ⋮ → Set level here to make its position the reference.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 
     SectionCard(title = "Mode") {
         val choices = listOf(
@@ -253,6 +294,44 @@ private fun Live(
     }
 }
 
+/** Requests are failing, but not for long enough to call the heliostat unreachable. */
+@Composable
+private fun Reconnecting() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        Text(
+            "Weak connection — retrying…",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The phone refuses this app any network access. On GrapheneOS that is the
+ * per-app Network permission, which apps cannot request at runtime -- so send
+ * the user straight to this app's settings page, where the toggle lives.
+ */
+@Composable
+private fun NetworkBlocked() {
+    val context = LocalContext.current
+    Banner(
+        title = "This app isn't allowed to use the network",
+        text = "The phone is blocking the heliostat app's network access, so it can't reach " +
+            "the heliostat over WiFi (Bluetooth setup still works, which is why it got this far).\n\n" +
+            "On GrapheneOS: Permissions → Network → Allow. It's in this app's settings page.",
+        kind = BannerKind.Error,
+        actions = {
+            Button(onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }) { Text("Open app settings") }
+        },
+    )
+}
+
 @Composable
 private fun ActionButton(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
     FilledTonalButton(onClick = onClick, modifier = modifier) {
@@ -265,7 +344,8 @@ private fun ActionButton(label: String, icon: ImageVector, modifier: Modifier, o
 private fun OverflowMenu(
     onSendTime: () -> Unit,
     onSendLocation: () -> Unit,
-    onChangeAddress: () -> Unit,
+    onSetLevel: () -> Unit,
+    onSwitch: () -> Unit,
     onSetupAgain: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -273,8 +353,9 @@ private fun OverflowMenu(
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
         MenuItem("Send phone time", Icons.Rounded.AccessTime) { open = false; onSendTime() }
         MenuItem("Send phone location", Icons.Rounded.MyLocation) { open = false; onSendLocation() }
-        MenuItem("Change address", Icons.Rounded.Edit) { open = false; onChangeAddress() }
-        MenuItem("Set up over Bluetooth", Icons.Rounded.Bluetooth) { open = false; onSetupAgain() }
+        MenuItem("Set level here", Icons.Rounded.Straighten) { open = false; onSetLevel() }
+        MenuItem("Switch heliostat", Icons.Rounded.Wifi) { open = false; onSwitch() }
+        MenuItem("Set up a new one (Bluetooth)", Icons.Rounded.Bluetooth) { open = false; onSetupAgain() }
     }
 }
 

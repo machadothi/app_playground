@@ -10,6 +10,7 @@ import com.machadothi.templateapp.ui.screen.address.AddressScreen
 import com.machadothi.templateapp.ui.screen.dashboard.DashboardScreen
 import com.machadothi.templateapp.ui.screen.devicescan.DeviceScanScreen
 import com.machadothi.templateapp.ui.screen.filter.FiltersScreen
+import com.machadothi.templateapp.ui.screen.find.FindScreen
 import com.machadothi.templateapp.ui.screen.graph.GraphScreen
 import com.machadothi.templateapp.ui.screen.graph.GraphType
 import com.machadothi.templateapp.ui.screen.graph.humidity.HumidityGraphScreen
@@ -17,7 +18,6 @@ import com.machadothi.templateapp.ui.screen.graph.temperature.TemperatureGraphSc
 import com.machadothi.templateapp.ui.screen.jog.JogScreen
 import com.machadothi.templateapp.ui.screen.provision.ProvisionScreen
 import com.machadothi.templateapp.ui.screen.sensor.SensorsScreen
-import com.machadothi.templateapp.ui.screen.start.StartScreen
 import com.machadothi.templateapp.ui.screen.target.TargetScreen
 
 @Composable
@@ -27,19 +27,26 @@ fun NavigationScreen(
     val navController = rememberNavController()
     NavHost(
         navController = navController,
-        startDestination = NavRoutes.Start,
+        startDestination = NavRoutes.Find(auto = true),
         modifier = modifier
     ) {
-        composable<NavRoutes.Start> {
-            StartScreen(
-                onProvisioned = { navController.replaceWith(NavRoutes.Dashboard) },
-                onNotProvisioned = { navController.replaceWith(NavRoutes.DeviceScan) },
+        composable<NavRoutes.Find> {
+            val canGoBack = navController.previousBackStackEntry != null
+            FindScreen(
+                onConnected = { navController.replaceWith(NavRoutes.Dashboard) },
+                onSetUpNew = { navController.navigate(NavRoutes.DeviceScan) },
+                onEnterAddress = { navController.navigate(NavRoutes.Address) },
+                onBack = if (canGoBack) ({ navController.popBackStack() }) else null,
             )
         }
         composable<NavRoutes.DeviceScan> {
+            // Reached from the dashboard ("Set up again"), Back returns there with
+            // the old address intact; reached on first launch, there is nowhere to go back to.
+            val canGoBack = navController.previousBackStackEntry != null
             DeviceScanScreen(
                 onDeviceSelected = { navController.navigate(NavRoutes.Provision(it.address)) },
                 onUseAddress = { navController.navigate(NavRoutes.Address) },
+                onBack = if (canGoBack) ({ navController.popBackStack() }) else null,
             )
         }
         composable<NavRoutes.Provision> {
@@ -58,8 +65,8 @@ fun NavigationScreen(
             DashboardScreen(
                 onJog = { navController.navigate(NavRoutes.Jog) },
                 onTarget = { navController.navigate(NavRoutes.Target) },
-                onSetupAgain = { navController.replaceWith(NavRoutes.DeviceScan) },
-                onChangeAddress = { navController.navigate(NavRoutes.Address) },
+                onSetupAgain = { navController.navigate(NavRoutes.DeviceScan) },
+                onFind = { auto -> navController.navigate(NavRoutes.Find(auto)) },
             )
         }
         composable<NavRoutes.Jog> {

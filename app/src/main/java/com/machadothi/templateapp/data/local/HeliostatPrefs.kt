@@ -33,6 +33,8 @@ class HeliostatPrefs @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val host = stringPreferencesKey("host")
+    private val heliostatId = stringPreferencesKey("heliostat_id")
+    private val heliostatName = stringPreferencesKey("heliostat_name")
     private val deviceAddress = stringPreferencesKey("device_address")
     private val ssid = stringPreferencesKey("ssid")
     private val encryptedPassword = stringPreferencesKey("wifi_password")
@@ -45,14 +47,45 @@ class HeliostatPrefs @Inject constructor(
     suspend fun saveProvisioned(hostIp: String, address: String, networkSsid: String, password: String) {
         context.dataStore.edit {
             it[host] = hostIp
+            // A different board, possibly: its id arrives with the first /api/status.
+            it.remove(heliostatId)
+            it.remove(heliostatName)
             it[deviceAddress] = address
             it[ssid] = networkSsid
             it[encryptedPassword] = SecretBox.encrypt(password)
         }
     }
 
+    /** A typed-in address: who is there is learnt from its first /api/status. */
     suspend fun setHost(hostIp: String) {
-        context.dataStore.edit { it[host] = hostIp }
+        context.dataStore.edit {
+            it[host] = hostIp
+            it.remove(heliostatId)
+            it.remove(heliostatName)
+        }
+    }
+
+    /** The heliostat this phone uses, by its stable id -- found again by discovery if its IP changes. */
+    suspend fun remembered(): Remembered? {
+        val prefs = context.dataStore.data.first()
+        val savedHost = prefs[host] ?: return null
+        return Remembered(savedHost, prefs[heliostatId], prefs[heliostatName])
+    }
+
+    suspend fun remember(hostIp: String, id: String?, name: String?) {
+        context.dataStore.edit {
+            it[host] = hostIp
+            if (id != null) it[heliostatId] = id else it.remove(heliostatId)
+            if (name != null) it[heliostatName] = name else it.remove(heliostatName)
+        }
+    }
+
+    /** Learn the id of the heliostat at the current address (e.g. one typed in by hand). */
+    suspend fun setIdentity(id: String, name: String) {
+        context.dataStore.edit {
+            it[heliostatId] = id
+            it[heliostatName] = name
+        }
     }
 
     /** The remembered password for [networkSsid], or null. */
@@ -60,13 +93,6 @@ class HeliostatPrefs @Inject constructor(
         val prefs = context.dataStore.data.first()
         if (prefs[ssid] != networkSsid) return null
         return prefs[encryptedPassword]?.let { runCatching { SecretBox.decrypt(it) }.getOrNull() }
-    }
-
-    suspend fun forgetHeliostat() {
-        context.dataStore.edit {
-            it.remove(host)
-            it.remove(deviceAddress)
-        }
     }
 }
 
@@ -109,3 +135,5 @@ private object SecretBox {
         }
     }
 }
+
+data class Remembered(val host: String, val id: String?, val name: String?)

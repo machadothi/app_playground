@@ -1,5 +1,6 @@
 package com.machadothi.templateapp.ui.screen.dashboard
 
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,11 +9,14 @@ import androidx.lifecycle.viewModelScope
 import com.machadothi.templateapp.data.network.StatusResponse
 import com.machadothi.templateapp.data.network.TelemetryResponse
 import com.machadothi.templateapp.repository.heliostat.HeliostatRepository
+import com.machadothi.templateapp.repository.heliostat.NetworkBlockedException
 import com.machadothi.templateapp.wifi.PhoneLocation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val UNREACHABLE_AFTER_MS = 12_000L
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -32,16 +36,37 @@ class DashboardViewModel @Inject constructor(
 
     private var polling: Job? = null
 
-    /** Poll at 2 Hz while the screen is visible. */
+    /**
+     * Poll at 2 Hz while the screen is visible.
+     *
+     * One failed request is not "unreachable": on a weak WiFi link single requests
+     * time out now and then, and flipping the whole screen to an error for each
+     * made a working heliostat look dead. The last good telemetry stays up, marked
+     * as reconnecting, until nothing has succeeded for [UNREACHABLE_AFTER_MS].
+     */
     fun startPolling() {
         if (polling?.isActive == true) return
         polling = viewModelScope.launch {
             refreshStatus()
+            var lastSuccess = 0L
             repository.telemetry(periodMs = 500).collect { result ->
                 val host = repository.host().orEmpty()
+                val now = SystemClock.elapsedRealtime()
+                val live = uiState as? DashboardUiState.Live
                 uiState = result.fold(
-                    onSuccess = { DashboardUiState.Live(it, host) },
-                    onFailure = { DashboardUiState.Unreachable(it.message ?: "unreachable", host) },
+                    onSuccess = {
+                        lastSuccess = now
+                        DashboardUiState.Live(it, host)
+                    },
+                    onFailure = {
+                        if (it !is NetworkBlockedException && live != null && now - lastSuccess < UNREACHABLE_AFTER_MS) {
+                            live.copy(reconnecting = true)
+                        } else {
+                            DashboardUiState.Unreachable(
+                                it.message ?: "unreachable", host, networkBlocked = it is NetworkBlockedException,
+                            )
+                        }
+                    },
                 )
             }
         }
@@ -74,12 +99,7 @@ class DashboardViewModel @Inject constructor(
         repository.sendLocation(location.latitude, location.longitude, location.altitude)
     }
 
-    fun forget(onForgotten: () -> Unit) {
-        viewModelScope.launch {
-            repository.forget()
-            onForgotten()
-        }
-    }
+    fun setLevel() = act("Level set: tilt is now measured from here") { repository.setLevel() }
 
     private suspend fun refreshStatus() {
         repository.status().onSuccess { status = it }
@@ -94,6 +114,16 @@ class DashboardViewModel @Inject constructor(
 
 sealed class DashboardUiState {
     data object Loading : DashboardUiState()
-    data class Live(val telemetry: TelemetryResponse, val host: String) : DashboardUiState()
-    data class Unreachable(val message: String, val host: String) : DashboardUiState()
+    data class Live(
+        val telemetry: TelemetryResponse,
+        val host: String,
+        /** The last requests failed; [telemetry] is the most recent that arrived. */
+        val reconnecting: Boolean = false,
+    ) : DashboardUiState()
+    data class Unreachable(
+        val message: String,
+        val host: String,
+        /** The PHONE refuses this app network access -- not a heliostat problem. */
+        val networkBlocked: Boolean = false,
+    ) : DashboardUiState()
 }

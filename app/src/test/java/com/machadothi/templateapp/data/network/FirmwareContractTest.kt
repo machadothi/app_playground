@@ -20,7 +20,9 @@ import retrofit2.Retrofit
  * The app's HTTP layer against the firmware's REAL responses.
  *
  * Every fixture in src/test/resources/firmware was recorded from the heliostat
- * repo's tools/mock_server.py, which runs the firmware's own net/api.py. If the
+ * repo's tools/mock_server.py, which runs the firmware's own net/api.py -- except
+ * the `*_hardware_*` ones, recorded from the real board (single-precision floats,
+ * a real MPU6050). If the
  * firmware renames a field or changes a shape, these tests fail here -- before a
  * phone ever shows a blank dashboard.
  */
@@ -62,6 +64,27 @@ class FirmwareContractTest {
         assertEquals(2, t.pos.size)
         assertNotNull(t.efficiency)
         assertEquals(2, t.volts.size)
+    }
+
+    @Test
+    fun `hardware telemetry with IMU readings and a latched tilt parses`() = runBlocking {
+        serve("telemetry_hardware_tilt_latched.json")
+        val t = service.telemetry()
+        assertEquals("stow", t.mode)
+        assertEquals(listOf("tilt"), t.trips)
+        assertNotNull(t.latched)
+        assertEquals(47.36, t.tilt_deg!!, 0.01)
+        assertEquals(0.974, t.accel_g!!, 0.001)
+        assertEquals(false, t.imu_calibrated)
+        assertEquals(null, t.beam)
+    }
+
+    @Test
+    fun `hardware status carries the stable id used to find the heliostat again`() = runBlocking {
+        serve("status_hardware.json")
+        val s = service.status()
+        assertEquals("84cca85ed290", s.device!!.id)
+        assertEquals("my_heliostat", s.device!!.name)
     }
 
     @Test

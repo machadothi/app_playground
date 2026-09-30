@@ -1,7 +1,9 @@
 package com.machadothi.templateapp.repository.heliostat
 
+import com.machadothi.templateapp.data.local.Remembered
 import com.machadothi.templateapp.data.network.StatusResponse
 import com.machadothi.templateapp.data.network.TelemetryResponse
+import com.machadothi.templateapp.discovery.FoundHeliostat
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -28,6 +30,12 @@ interface HeliostatRepository {
     suspend fun sendTime(): Result<Unit>
     suspend fun sendLocation(lat: Double, lon: Double, elevationM: Double): Result<Unit>
 
-    /** Forget the heliostat on this phone; the next launch starts at device scan. */
-    suspend fun forget()
+    /** Adopt the base's current attitude as level: the tilt safety rule measures from it. */
+    suspend fun setLevel(): Result<Unit>
+
+    /** The heliostat this phone used last, or null if none was ever set up. */
+    suspend fun remembered(): Remembered?
+
+    /** Switch to a heliostat found on the network, and remember it for next time. */
+    suspend fun choose(found: FoundHeliostat)
 }

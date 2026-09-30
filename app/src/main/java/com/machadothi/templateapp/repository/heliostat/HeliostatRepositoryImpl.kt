@@ -11,6 +11,7 @@ import com.machadothi.templateapp.data.network.StatusResponse
 import com.machadothi.templateapp.data.network.TargetRequest
 import com.machadothi.templateapp.data.network.TelemetryResponse
 import com.machadothi.templateapp.data.network.TimeRequest
+import com.machadothi.templateapp.discovery.FoundHeliostat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -47,7 +48,16 @@ class HeliostatRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun status() = call { service.status() }
+    override suspend fun status() = call { service.status() }.onSuccess { status ->
+        // Learn who is at this address: a heliostat added by typing its IP, or set
+        // up over Bluetooth, gets an id here -- and with it, rediscovery by id.
+        val device = status.device
+        val id = device?.id
+        if (id != null) {
+            val saved = prefs.remembered()
+            if (saved?.id != id || saved.name != device.name) prefs.setIdentity(id, device.name)
+        }
+    }
 
     override suspend fun setMode(mode: String) = call { service.setMode(ModeRequest(mode)) }.map {}
 
@@ -74,9 +84,13 @@ class HeliostatRepositoryImpl @Inject constructor(
     override suspend fun sendLocation(lat: Double, lon: Double, elevationM: Double) =
         call { service.setLocation(LocationRequest(lat, lon, elevationM)) }.map {}
 
-    override suspend fun forget() {
-        hostSelector.host = null
-        prefs.forgetHeliostat()
+    override suspend fun setLevel() = call { service.setImuLevel() }.map {}
+
+    override suspend fun remembered() = prefs.remembered()
+
+    override suspend fun choose(found: FoundHeliostat) {
+        hostSelector.host = found.host
+        prefs.remember(found.host, found.id, found.name)
     }
 
     /**
@@ -96,8 +110,29 @@ class HeliostatRepositoryImpl @Inject constructor(
         val message = body?.let { runCatching { json.decodeFromString<ErrorResponse>(it).error }.getOrNull() }
         Result.failure(IllegalStateException(message ?: "HTTP ${e.code()}"))
     } catch (e: IOException) {
-        Result.failure(IllegalStateException("No response (${e.message ?: "network error"})"))
+        // EPERM on socket() is the OS refusing this APP any network access -- the
+        // request never leaves the phone. On GrapheneOS that is its per-app Network
+        // permission being off (Bluetooth is not covered by it, so provisioning
+        // still works). Elsewhere: a firewall app, or stale permissions after an
+        // in-place update.
+        if (e.message?.contains("EPERM") == true) {
+            Result.failure(NetworkBlockedException())
+        } else {
+            Result.failure(IllegalStateException("No response (${e.message ?: "network error"})"))
+        }
     } catch (e: Exception) {
         Result.failure(e)
     }
 }
+
+/**
+ * The phone refused this app any network access (EPERM on socket creation).
+ *
+ * On GrapheneOS this is its per-app Network permission being off. It cannot be
+ * requested at runtime -- GrapheneOS only offers it at install time and in
+ * Settings, and otherwise "pretends the network is down" -- so the app detects
+ * the symptom and sends the user to its settings page instead.
+ */
+class NetworkBlockedException : IllegalStateException(
+    "The phone is blocking this app's network access (on GrapheneOS: the Network permission).",
+)
