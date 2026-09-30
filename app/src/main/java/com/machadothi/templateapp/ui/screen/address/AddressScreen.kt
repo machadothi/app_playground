@@ -4,10 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -19,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.machadothi.templateapp.repository.heliostat.HeliostatRepository
+import com.machadothi.templateapp.ui.component.HeliostatTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,29 +34,48 @@ import javax.inject.Inject
  * laptop mock server (tools/mock_server.py, e.g. 192.168.50.132:8080).
  */
 @Composable
-fun AddressScreen(onDone: () -> Unit, viewModel: AddressViewModel = hiltViewModel()) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Heliostat address", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "The IP shown when it joined WiFi, or heliostat.local. For the laptop mock " +
-                "server, use the laptop's IP and port, e.g. 192.168.50.132:8080.",
-        )
-        OutlinedTextField(
-            value = viewModel.address,
-            onValueChange = { viewModel.address = it },
-            label = { Text("IP or IP:port") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = { viewModel.save(onDone) },
-            enabled = viewModel.address.isNotBlank(),
-        ) { Text("Use this address") }
+fun AddressScreen(onDone: () -> Unit, onBack: () -> Unit, viewModel: AddressViewModel = hiltViewModel()) {
+    AddressContent(
+        address = viewModel.address,
+        onAddress = { viewModel.address = it },
+        onSave = { viewModel.save(onDone) },
+        onBack = onBack,
+    )
+}
+
+@Composable
+fun AddressContent(address: String, onAddress: (String) -> Unit, onSave: () -> Unit, onBack: () -> Unit) {
+    Scaffold(topBar = { HeliostatTopBar("Heliostat address", onBack = onBack) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                "Use the IP shown when it joined WiFi, or heliostat.local. For the laptop mock " +
+                    "server, use the laptop's IP and port.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = address,
+                onValueChange = onAddress,
+                label = { Text("IP or IP:port") },
+                placeholder = { Text("192.168.50.77") },
+                leadingIcon = { Icon(Icons.Rounded.Router, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = onSave,
+                enabled = address.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) { Text("Connect") }
+        }
     }
 }
 

@@ -43,10 +43,16 @@ fun NavigationScreen(
             )
         }
         composable<NavRoutes.Provision> {
-            ProvisionScreen(onDone = { navController.replaceWith(NavRoutes.Dashboard) })
+            ProvisionScreen(
+                onDone = { navController.replaceWith(NavRoutes.Dashboard) },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<NavRoutes.Address> {
-            AddressScreen(onDone = { navController.replaceWith(NavRoutes.Dashboard) })
+            AddressScreen(
+                onDone = { navController.replaceWith(NavRoutes.Dashboard) },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<NavRoutes.Dashboard> {
             DashboardScreen(
@@ -60,7 +66,10 @@ fun NavigationScreen(
             JogScreen(onDone = { navController.popBackStack() })
         }
         composable<NavRoutes.Target> {
-            TargetScreen(onJog = { navController.navigate(NavRoutes.Jog) })
+            TargetScreen(
+                onJog = { navController.navigate(NavRoutes.Jog) },
+                onBack = { navController.popBackStack() },
+            )
         }
 
         // The original sensor demo.

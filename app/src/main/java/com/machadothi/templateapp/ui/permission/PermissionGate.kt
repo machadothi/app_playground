@@ -8,7 +8,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.BluetoothDisabled
+import androidx.compose.material.icons.rounded.LocationOff
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -59,6 +69,7 @@ fun PermissionGate(content: @Composable () -> Unit) {
 
     when {
         missing.isNotEmpty() -> Explain(
+            icon = Icons.Rounded.Bluetooth,
             title = "Permissions needed",
             body = "Bluetooth, to find the heliostat and hand it your WiFi details.\n\n" +
                 "Location, because Android only tells apps the name of the WiFi network " +
@@ -68,6 +79,7 @@ fun PermissionGate(content: @Composable () -> Unit) {
         ) { permissionLauncher.launch(BlePermissions.required) }
 
         !bluetoothOn -> Explain(
+            icon = Icons.Rounded.BluetoothDisabled,
             title = "Bluetooth is off",
             body = "Setup talks to the heliostat over Bluetooth.",
             action = "Turn on Bluetooth",
@@ -77,6 +89,7 @@ fun PermissionGate(content: @Composable () -> Unit) {
         }
 
         !locationOn -> Explain(
+            icon = Icons.Rounded.LocationOff,
             title = "Location Services are off",
             body = "With Location off, Android hides the name of your WiFi network and " +
                 "older phones find no Bluetooth devices at all.",
@@ -91,16 +104,33 @@ private fun bluetoothOn(context: Context): Boolean =
     (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true
 
 @Composable
-private fun Explain(title: String, body: String, action: String, onAction: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineSmall)
-        Text(body, textAlign = TextAlign.Center)
-        Button(onClick = onAction) { Text(action) }
+fun Explain(icon: ImageVector, title: String, body: String, action: String, onAction: () -> Unit) {
+    Surface(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .size(40.dp),
+                )
+            }
+            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            Text(
+                body,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = onAction, modifier = Modifier.height(52.dp)) { Text(action) }
+        }
     }
 }

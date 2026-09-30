@@ -1,23 +1,38 @@
 package com.machadothi.templateapp.ui.screen.provision
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,136 +41,283 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.machadothi.templateapp.ble.VisibleNetwork
+import com.machadothi.templateapp.ui.component.Banner
+import com.machadothi.templateapp.ui.component.BannerKind
+import com.machadothi.templateapp.ui.component.HeliostatTopBar
+import com.machadothi.templateapp.ui.component.SectionCard
+import com.machadothi.templateapp.ui.component.SignalBars
 import kotlinx.coroutines.delay
 
 @Composable
 fun ProvisionScreen(
     onDone: () -> Unit,
+    onBack: () -> Unit,
     viewModel: ProvisionViewModel = hiltViewModel(),
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Connect to WiFi", style = MaterialTheme.typography.headlineSmall)
+    ProvisionContent(
+        state = viewModel.uiState,
+        ssid = viewModel.ssid,
+        password = viewModel.password,
+        onSsid = { viewModel.ssid = it },
+        onPassword = { viewModel.password = it },
+        onPick = viewModel::pick,
+        onJoin = viewModel::join,
+        onRetry = viewModel::connect,
+        onDone = onDone,
+        onBack = onBack,
+    )
+}
 
-        when (val state = viewModel.uiState) {
-            ProvisionUiState.Connecting -> Busy("Connecting to my_heliostat…")
+@Composable
+fun ProvisionContent(
+    state: ProvisionUiState,
+    ssid: String,
+    password: String,
+    onSsid: (String) -> Unit,
+    onPassword: (String) -> Unit,
+    onPick: (VisibleNetwork) -> Unit,
+    onJoin: () -> Unit,
+    onRetry: () -> Unit,
+    onDone: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Scaffold(topBar = { HeliostatTopBar("Connect to WiFi", subtitle = "my_heliostat", onBack = onBack) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Stepper(
+                current = when (state) {
+                    ProvisionUiState.Connecting, is ProvisionUiState.Error -> 0
+                    is ProvisionUiState.Ready, is ProvisionUiState.Joining -> 1
+                    is ProvisionUiState.Joined -> 2
+                },
+            )
 
-            is ProvisionUiState.Error -> {
-                Text(state.message, color = MaterialTheme.colorScheme.error)
-                if (state.canRetry) Button(onClick = viewModel::connect) { Text("Try again") }
-            }
+            when (state) {
+                ProvisionUiState.Connecting -> Busy("Connecting over Bluetooth…")
 
-            is ProvisionUiState.Joining -> Busy(state.step)
+                is ProvisionUiState.Error -> Banner(
+                    state.message,
+                    BannerKind.Error,
+                    title = "Connection failed",
+                    actions = { if (state.canRetry) Button(onClick = onRetry) { Text("Try again") } },
+                )
 
-            is ProvisionUiState.Joined -> {
-                Text("✓ Joined ${state.ssid}", style = MaterialTheme.typography.titleMedium)
-                Text("The heliostat is at ${state.ip}. Bluetooth turns off in a few seconds.")
-                LaunchedEffect(state) {
-                    delay(1_500)
-                    onDone()
+                is ProvisionUiState.Joining -> Busy(state.step)
+
+                is ProvisionUiState.Joined -> {
+                    Joined(state)
+                    LaunchedEffect(state) {
+                        delay(1_800)
+                        onDone()
+                    }
                 }
-            }
 
-            is ProvisionUiState.Ready -> ReadyForm(state, viewModel)
+                is ProvisionUiState.Ready -> ReadyForm(state, ssid, password, onSsid, onPassword, onPick, onJoin)
+            }
         }
     }
 }
 
 @Composable
-private fun ReadyForm(state: ProvisionUiState.Ready, viewModel: ProvisionViewModel) {
+private fun ReadyForm(
+    state: ProvisionUiState.Ready,
+    ssid: String,
+    password: String,
+    onSsid: (String) -> Unit,
+    onPassword: (String) -> Unit,
+    onPick: (VisibleNetwork) -> Unit,
+    onJoin: () -> Unit,
+) {
     val phone = state.phone
     when {
-        phone == null -> Text(
-            "Couldn't read which WiFi network your phone is on. Type the network name " +
-                "below, or pick one the heliostat can hear.",
+        phone == null -> Banner(
+            "Couldn't read which WiFi network your phone is on. Type the network name, " +
+                "or pick one the heliostat can hear below.",
+            BannerKind.Info,
         )
 
-        phone.is24GHz -> Text("Your phone is on ${phone.ssid}. The heliostat will join the same network.")
+        phone.is24GHz -> Banner("Your phone is on ${phone.ssid}. The heliostat will join the same network.", BannerKind.Info)
 
-        else -> Warning(
-            "Your phone is on ${phone.ssid}, which is a 5 GHz network. The heliostat only has " +
-                "2.4 GHz WiFi and can't join it." +
+        else -> Banner(
+            title = "${phone.ssid} is a 5 GHz network",
+            text = "The heliostat only has 2.4 GHz WiFi and can't join it." +
                 (state.suggestion?.let {
-                    "\n\n${it.ssid} looks like the same router's 2.4 GHz network, so it's " +
-                        "selected below. Routers usually use the same password for both."
-                } ?: "\n\nPick a 2.4 GHz network the heliostat can hear, below."),
+                    " ${it.ssid} looks like the same router's 2.4 GHz network, so it's selected. " +
+                        "Routers usually use the same password for both."
+                } ?: " Pick a 2.4 GHz network the heliostat can hear, below."),
+            kind = BannerKind.Warning,
+        )
+    }
+    state.error?.let { Banner(it, BannerKind.Error, title = "Couldn't join") }
+
+    OutlinedTextField(
+        value = ssid,
+        onValueChange = onSsid,
+        label = { Text("Network name") },
+        leadingIcon = { Icon(Icons.Rounded.Wifi, contentDescription = null) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    var showPassword by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = password,
+        onValueChange = onPassword,
+        label = { Text("Password") },
+        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+        trailingIcon = {
+            IconButton(onClick = { showPassword = !showPassword }) {
+                Icon(
+                    if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    contentDescription = if (showPassword) "Hide password" else "Show password",
+                )
+            }
+        },
+        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Button(
+        onClick = onJoin,
+        enabled = ssid.isNotBlank(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+    ) { Text("Connect heliostat") }
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+            if (state.locationSent) "Time and location sent" else "Time sent · location unavailable",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 
-    state.error?.let { Warning(it) }
-
-    OutlinedTextField(
-        value = viewModel.ssid,
-        onValueChange = { viewModel.ssid = it },
-        label = { Text("Network name (SSID)") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    var showPassword by remember { mutableStateOf(false) }
-    OutlinedTextField(
-        value = viewModel.password,
-        onValueChange = { viewModel.password = it },
-        label = { Text("WiFi password") },
-        singleLine = true,
-        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon = {
-            TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Hide" else "Show") }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    Button(
-        onClick = viewModel::join,
-        enabled = viewModel.ssid.isNotBlank(),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text("Connect heliostat to ${viewModel.ssid.ifBlank { "WiFi" }}") }
-
-    Text(
-        if (state.locationSent) "Time and location sent to the heliostat."
-        else "Time sent. Location unavailable; set it later from the dashboard.",
-        style = MaterialTheme.typography.bodySmall,
-    )
-
     if (state.visible.isNotEmpty()) {
-        Text("Networks the heliostat can hear", style = MaterialTheme.typography.titleSmall)
-        state.visible.take(10).forEach { network ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.pick(network) }
-                    .padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(network.ssid)
-                Text("${network.rssi} dBm · ch ${network.channel}")
+        SectionCard(title = "Networks the heliostat can hear") {
+            state.visible.take(8).forEachIndexed { index, network ->
+                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { onPick(network) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SignalBars(network.rssi)
+                    Column(Modifier.weight(1f)) {
+                        Text(network.ssid, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "2.4 GHz · channel ${network.channel} · ${network.rssi} dBm",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (network.ssid == ssid) {
+                        Icon(Icons.Rounded.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun Stepper(current: Int) {
+    val steps = listOf(
+        "Bluetooth" to Icons.Rounded.Bluetooth,
+        "WiFi" to Icons.Rounded.Wifi,
+        "Done" to Icons.Rounded.Check,
+    )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        steps.forEachIndexed { index, (label, icon) ->
+            Step(label, icon, done = index < current, active = index == current, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun Step(label: String, icon: ImageVector, done: Boolean, active: Boolean, modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val background = when {
+        done -> scheme.primary
+        active -> scheme.primaryContainer
+        else -> scheme.surfaceContainerHigh
+    }
+    val content = when {
+        done -> scheme.onPrimary
+        active -> scheme.onPrimaryContainer
+        else -> scheme.onSurfaceVariant
+    }
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(background),
+            contentAlignment = Alignment.Center,
+        ) { Icon(if (done) Icons.Rounded.Check else icon, contentDescription = null, tint = content) }
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active || done) scheme.onSurface else scheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun Busy(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        CircularProgressIndicator()
-        Text(text)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        CircularProgressIndicator(Modifier.size(48.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
-private fun Warning(text: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-        Text(text, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+private fun Joined(state: ProvisionUiState.Joined) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+            Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(12.dp)
+                    .size(56.dp),
+            )
+        }
+        Text("Connected to ${state.ssid}", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text(
+            "The heliostat is at ${state.ip}.\nBluetooth switches off in a few seconds.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }

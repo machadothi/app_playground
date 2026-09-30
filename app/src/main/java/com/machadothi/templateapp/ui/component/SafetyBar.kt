@@ -2,22 +2,34 @@ package com.machadothi.templateapp.ui.component
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CenterFocusWeak
+import androidx.compose.material.icons.rounded.PanTool
+import androidx.compose.material.icons.rounded.VerticalAlignBottom
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.machadothi.templateapp.ui.theme.StopRed
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -36,30 +48,48 @@ import javax.inject.Inject
  */
 @Composable
 fun SafetyBar(viewModel: SafetyViewModel = hiltViewModel()) {
-    Surface(tonalElevation = 3.dp) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            viewModel.message?.let {
+    SafetyBarContent(message = viewModel.message, onMode = viewModel::set)
+}
+
+@Composable
+fun SafetyBarContent(message: String?, onMode: (String) -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 3.dp) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            message?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(onClick = { viewModel.set("defocus") }, modifier = Modifier.weight(1f)) {
-                    Text("Defocus")
-                }
-                OutlinedButton(onClick = { viewModel.set("stow") }, modifier = Modifier.weight(1f)) {
-                    Text("Stow")
-                }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SafetyButton("Defocus", Icons.Rounded.CenterFocusWeak, Modifier.weight(1f)) { onMode("defocus") }
+                SafetyButton("Stow", Icons.Rounded.VerticalAlignBottom, Modifier.weight(1f)) { onMode("stow") }
                 Button(
-                    onClick = { viewModel.set("estop") },
+                    onClick = { onMode("estop") },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ),
-                ) { Text("E-STOP", fontWeight = FontWeight.Bold) }
+                    colors = ButtonDefaults.buttonColors(containerColor = StopRed, contentColor = Color.White),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                ) {
+                    Icon(Icons.Rounded.PanTool, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(" STOP", fontWeight = FontWeight.Black, maxLines = 1)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun SafetyButton(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(" $label", maxLines = 1)
         }
     }
 }

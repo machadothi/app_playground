@@ -6,12 +6,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -27,8 +31,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.machadothi.templateapp.data.network.StatusResponse
 import com.machadothi.templateapp.repository.heliostat.HeliostatRepository
+import com.machadothi.templateapp.ui.component.HeliostatTopBar
+import com.machadothi.templateapp.ui.component.MetricTile
 import com.machadothi.templateapp.ui.component.SafetyBar
+import com.machadothi.templateapp.ui.component.SectionCard
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -38,59 +46,102 @@ import javax.inject.Inject
  *
  * Two ways to set it: type the direction (azimuth from true north, elevation
  * above the horizon), or -- far easier in practice -- jog the mirror until the
- * spot sits where you want it and tap "Capture current aim". The heliostat works
- * the target out from the sun's position and the mirror's current angle.
+ * spot sits where you want it and tap "Capture". The heliostat works the target
+ * out from the sun's position and the mirror's current angle.
  */
 @Composable
-fun TargetScreen(onJog: () -> Unit, viewModel: TargetViewModel = hiltViewModel()) {
-    Scaffold(bottomBar = { SafetyBar() }) { padding ->
+fun TargetScreen(onJog: () -> Unit, onBack: () -> Unit, viewModel: TargetViewModel = hiltViewModel()) {
+    TargetContent(
+        current = viewModel.current,
+        azimuth = viewModel.azimuth,
+        elevation = viewModel.elevation,
+        message = viewModel.message,
+        onAzimuth = { viewModel.azimuth = it },
+        onElevation = { viewModel.elevation = it },
+        onSave = viewModel::save,
+        onCapture = viewModel::capture,
+        onJog = onJog,
+        onBack = onBack,
+    )
+}
+
+@Composable
+fun TargetContent(
+    current: StatusResponse.Target?,
+    azimuth: String,
+    elevation: String,
+    message: String?,
+    onAzimuth: (String) -> Unit,
+    onElevation: (String) -> Unit,
+    onSave: () -> Unit,
+    onCapture: () -> Unit,
+    onJog: () -> Unit,
+    onBack: () -> Unit,
+    bottomBar: @Composable () -> Unit = { SafetyBar() },
+) {
+    Scaffold(
+        topBar = { HeliostatTopBar("Target", subtitle = "Where the beam should land", onBack = onBack) },
+        bottomBar = bottomBar,
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Target", style = MaterialTheme.typography.headlineSmall)
-            viewModel.current?.let { Text("Current: $it") }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricTile("Target azimuth", current?.let { "%.1f".format(it.az) } ?: "—", Modifier.weight(1f), unit = "°")
+                MetricTile("Target elevation", current?.let { "%.1f".format(it.el) } ?: "—", Modifier.weight(1f), unit = "°")
+            }
 
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Capture current aim", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "1. Jog the mirror until the spot lands where you want it.\n" +
-                            "2. Tap Capture. Needs the sun to be up and on the mirror.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = onJog) { Text("Open jog") }
-                        Button(onClick = viewModel::capture) { Text("Capture") }
+            SectionCard(title = "Capture current aim") {
+                Text(
+                    "The easy way. Jog the mirror until the bright spot lands exactly where you " +
+                        "want it, then capture. Needs the sun up and shining on the mirror.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilledTonalButton(onClick = onJog, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.OpenWith, null, Modifier.size(18.dp))
+                        Text("  Jog")
+                    }
+                    Button(onClick = onCapture, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.CenterFocusStrong, null, Modifier.size(18.dp))
+                        Text("  Capture")
                     }
                 }
             }
 
-            HorizontalDivider()
-            Text("Or enter it", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = viewModel.azimuth,
-                onValueChange = { viewModel.azimuth = it },
-                label = { Text("Azimuth ° (from north, clockwise)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = viewModel.elevation,
-                onValueChange = { viewModel.elevation = it },
-                label = { Text("Elevation ° (above horizon)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(onClick = viewModel::save) { Text("Save target") }
+            SectionCard(title = "Or type the direction") {
+                OutlinedTextField(
+                    value = azimuth,
+                    onValueChange = onAzimuth,
+                    label = { Text("Azimuth") },
+                    supportingText = { Text("Degrees clockwise from true north") },
+                    suffix = { Text("°") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = elevation,
+                    onValueChange = onElevation,
+                    label = { Text("Elevation") },
+                    supportingText = { Text("Degrees above the horizon") },
+                    suffix = { Text("°") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("Save target") }
+            }
 
-            viewModel.message?.let { Text(it) }
+            message?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -102,7 +153,7 @@ class TargetViewModel @Inject constructor(
 
     var azimuth by mutableStateOf("")
     var elevation by mutableStateOf("")
-    var current by mutableStateOf<String?>(null)
+    var current by mutableStateOf<StatusResponse.Target?>(null)
         private set
     var message by mutableStateOf<String?>(null)
         private set
@@ -110,11 +161,7 @@ class TargetViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             repository.status().onSuccess { status ->
-                status.target?.let {
-                    azimuth = "%.1f".format(it.az)
-                    elevation = "%.1f".format(it.el)
-                    current = "az %.1f°, el %.1f°".format(it.az, it.el)
-                }
+                status.target?.let { show(it) }
             }
         }
     }
@@ -127,23 +174,19 @@ class TargetViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            message = repository.setTarget(az, el).fold(
-                { "Saved: az %.1f°, el %.1f°".format(it.az, it.el).also { s -> current = s } },
-                { it.message },
-            )
+            message = repository.setTarget(az, el).fold({ show(it); "Target saved" }, { it.message })
         }
     }
 
     fun capture() {
         viewModelScope.launch {
-            message = repository.captureTarget().fold(
-                {
-                    azimuth = "%.1f".format(it.az)
-                    elevation = "%.1f".format(it.el)
-                    "Captured: az %.1f°, el %.1f°".format(it.az, it.el).also { s -> current = s }
-                },
-                { it.message },
-            )
+            message = repository.captureTarget().fold({ show(it); "Captured the current aim" }, { it.message })
         }
+    }
+
+    private fun show(target: StatusResponse.Target) {
+        current = target
+        azimuth = "%.1f".format(target.az)
+        elevation = "%.1f".format(target.el)
     }
 }

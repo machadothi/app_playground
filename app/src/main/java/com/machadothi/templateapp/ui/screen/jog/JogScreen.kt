@@ -6,12 +6,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -21,18 +31,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.machadothi.templateapp.data.network.TelemetryResponse
 import com.machadothi.templateapp.repository.heliostat.HeliostatRepository
+import com.machadothi.templateapp.ui.component.Banner
+import com.machadothi.templateapp.ui.component.BannerKind
+import com.machadothi.templateapp.ui.component.HeliostatTopBar
+import com.machadothi.templateapp.ui.component.ModeBadge
 import com.machadothi.templateapp.ui.component.SafetyBar
+import com.machadothi.templateapp.ui.component.SectionCard
+import com.machadothi.templateapp.ui.theme.Numeric
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private val STEPS = listOf(0.1, 1.0, 5.0, 10.0)
 
 /**
  * Move each axis by hand. Needs MANUAL mode, which suspends automatic tracking.
@@ -44,66 +61,121 @@ fun JogScreen(onDone: () -> Unit, viewModel: JogViewModel = hiltViewModel()) {
         viewModel.startPolling()
         onDispose { viewModel.stopPolling() }
     }
-    Scaffold(bottomBar = { SafetyBar() }) { padding ->
+    JogContent(
+        telemetry = viewModel.telemetry,
+        step = viewModel.step,
+        message = viewModel.message,
+        onStep = { viewModel.step = it },
+        onEnterManual = viewModel::enterManual,
+        onJog = viewModel::jog,
+        onDone = { viewModel.done(onDone) },
+    )
+}
+
+@Composable
+fun JogContent(
+    telemetry: TelemetryResponse?,
+    step: Double,
+    message: String?,
+    onStep: (Double) -> Unit,
+    onEnterManual: () -> Unit,
+    onJog: (axis: Int, direction: Int) -> Unit,
+    onDone: () -> Unit,
+    bottomBar: @Composable () -> Unit = { SafetyBar() },
+) {
+    val manual = telemetry?.mode == "manual"
+    Scaffold(
+        topBar = { HeliostatTopBar("Jog", subtitle = "Move the mirror by hand", onBack = onDone) },
+        bottomBar = bottomBar,
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Jog", style = MaterialTheme.typography.headlineSmall)
-            val t = viewModel.telemetry
-            val manual = t?.mode == "manual"
+            telemetry?.let { ModeBadge(it.mode) }
             if (!manual) {
-                Text("Mode is ${t?.mode ?: "unknown"}. Jogging needs manual mode, which pauses tracking.")
-                Button(onClick = viewModel::enterManual) { Text("Enter manual mode") }
+                Banner(
+                    title = "Manual mode needed",
+                    text = "Jogging pauses tracking. The heliostat goes to idle first, then manual.",
+                    kind = BannerKind.Warning,
+                    actions = { Button(onClick = onEnterManual) { Text("Enter manual mode") } },
+                )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0.1, 1.0, 5.0, 10.0).forEach { step ->
-                    FilterChip(
-                        selected = viewModel.step == step,
-                        onClick = { viewModel.step = step },
-                        label = { Text("$step°") },
-                    )
+            SectionCard(title = "Step") {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    STEPS.forEachIndexed { index, value ->
+                        SegmentedButton(
+                            selected = step == value,
+                            onClick = { onStep(value) },
+                            shape = SegmentedButtonDefaults.itemShape(index, STEPS.size),
+                            icon = {},
+                        ) { Text(if (value < 1) "$value°" else "${value.toInt()}°") }
+                    }
                 }
             }
 
-            AxisPad("Azimuth", t?.pos?.getOrNull(0), manual, { viewModel.jog(0, -1) }, { viewModel.jog(0, +1) })
-            AxisPad("Elevation", t?.pos?.getOrNull(1), manual, { viewModel.jog(1, -1) }, { viewModel.jog(1, +1) })
+            AxisPad("Azimuth", "degrees from north", telemetry?.pos?.getOrNull(0), manual,
+                { onJog(0, -1) }, { onJog(0, +1) })
+            AxisPad("Elevation", "degrees above horizon", telemetry?.pos?.getOrNull(1), manual,
+                { onJog(1, -1) }, { onJog(1, +1) })
 
-            viewModel.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            message?.let { Banner(it, BannerKind.Error) }
 
-            Button(onClick = { viewModel.done(onDone) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Done: back to idle")
-            }
+            OutlinedButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done — back to idle") }
         }
     }
 }
 
 @Composable
-private fun AxisPad(name: String, position: Double?, enabled: Boolean, minus: () -> Unit, plus: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+private fun AxisPad(
+    name: String,
+    hint: String,
+    position: Double?,
+    enabled: Boolean,
+    minus: () -> Unit,
+    plus: () -> Unit,
+) {
+    SectionCard(title = null) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilledTonalButton(onClick = minus, enabled = enabled) { Text("−") }
+            RoundButton(Icons.Rounded.Remove, "$name minus", enabled, minus)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(name)
+                Text(name, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    position?.let { "%.1f°".format(it) } ?: "-",
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.titleLarge,
+                    position?.let { "%.1f°".format(it) } ?: "—",
+                    style = MaterialTheme.typography.displaySmall.merge(Numeric),
                 )
+                Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            FilledTonalButton(onClick = plus, enabled = enabled) { Text("+") }
+            RoundButton(Icons.Rounded.Add, "$name plus", enabled, plus)
         }
     }
+}
+
+@Composable
+private fun RoundButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    FilledIconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(64.dp),
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) { Icon(icon, contentDescription = description, modifier = Modifier.size(32.dp)) }
 }
 
 @HiltViewModel

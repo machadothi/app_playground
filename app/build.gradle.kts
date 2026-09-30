@@ -7,10 +7,13 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.screenshot)
 }
 
 android {
     namespace = "com.machadothi.templateapp"
+    // Renders @PreviewTest composables to PNG on the JVM: ./gradlew updateDebugScreenshotTest
+    experimentalProperties["android.experimental.enableScreenshotTest"] = true
     compileSdk = 35
 
     val localProperties = Properties()
@@ -102,4 +105,8 @@ dependencies {
 
     // Heliostat: remembers the board's address and the WiFi password it was given
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.material.icons.extended)
+
+    screenshotTestImplementation(libs.screenshot.validation.api)
+    screenshotTestImplementation(libs.androidx.ui.tooling)
 }
