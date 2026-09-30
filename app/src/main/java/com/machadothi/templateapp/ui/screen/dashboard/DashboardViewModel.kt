@@ -52,7 +52,15 @@ class DashboardViewModel @Inject constructor(
         polling = null
     }
 
+    /**
+     * The heliostat only allows MANUAL from IDLE, so the operator stops tracking
+     * deliberately. The button does that step for them instead of failing.
+     */
     fun setMode(mode: String) = act("Mode: $mode") {
+        val current = (uiState as? DashboardUiState.Live)?.telemetry?.mode
+        if (mode == "manual" && current != "idle" && current != "manual") {
+            repository.setMode("idle").onFailure { return@act Result.failure<Unit>(it) }
+        }
         repository.setMode(mode).also { refreshStatus() }
     }
 

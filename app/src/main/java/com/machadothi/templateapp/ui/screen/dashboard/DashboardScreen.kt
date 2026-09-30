@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.OpenWith
@@ -167,27 +168,38 @@ private fun Live(
         )
     }
 
+    val trips = t.trips.filter { it != "comms" }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         ModeBadge(t.mode)
-        if (t.intent != t.mode) {
+        // Only when the machine really is waiting: armed to track, held off by
+        // night or weather. After a latched fault the intent is idle -- nothing waits.
+        val waiting = t.latched == null && t.intent in listOf("track", "defocus") && t.intent != t.mode
+        if (waiting) {
             Text(
-                "waiting to ${t.intent}",
+                "Will ${t.intent} when ${trips.firstOrNull()?.let { waitingReason(it) } ?: "conditions allow"}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
-    val trips = t.trips.filter { it != "comms" }
-    if (trips.isNotEmpty()) {
+    if (trips.isNotEmpty() && t.latched == null) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            trips.forEach { AssistChip(onClick = {}, label = { Text(it.replace('_', ' ')) }) }
+            trips.forEach {
+                AssistChip(
+                    onClick = {},
+                    label = { Text(tripLabel(it)) },
+                    leadingIcon = { Icon(Icons.Rounded.Info, contentDescription = null, Modifier.size(16.dp)) },
+                )
+            }
         }
     }
 
     SectionCard(title = null) {
         SkyDial(
             sun = t.sun?.toSkyPoint(),
-            mirror = t.pos.takeIf { it.size == 2 && it.all { v -> v != null } }
+            // A mirror facing below the horizon (stowed face-down) has no place on
+            // a map of the sky; its angles are still in the tile below.
+            mirror = t.pos.takeIf { it.size == 2 && it.all { v -> v != null } && it[1]!! >= 0 }
                 ?.let { SkyPoint(it[0]!!, it[1]!!) },
             beam = t.beam?.toSkyPoint(),
             target = status?.target?.let { SkyPoint(it.az, it.el) },
@@ -219,7 +231,9 @@ private fun Live(
             Triple("idle", "Idle", Icons.Rounded.PauseCircle),
             Triple("manual", "Manual", Icons.Rounded.PanTool),
         )
-        val allowed = status?.allowed_modes.orEmpty()
+        // Manual is reached via idle automatically (see DashboardViewModel.setMode),
+        // so it is offered whenever idle is.
+        val allowed = status?.allowed_modes.orEmpty().let { if ("idle" in it) it + "manual" else it }
         val current = if (t.intent == "track") "track" else t.mode
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             choices.forEachIndexed { index, (mode, label, icon) ->
@@ -271,6 +285,28 @@ private fun MenuItem(text: String, icon: ImageVector, onClick: () -> Unit) {
         leadingIcon = { Icon(icon, contentDescription = null) },
         onClick = onClick,
     )
+}
+
+/** Safety rule id -> something a person can read. */
+private fun tripLabel(rule: String) = when (rule) {
+    "sun_low" -> "Sun too low"
+    "no_time" -> "No valid time"
+    "unreachable" -> "Target unreachable"
+    "keepout" -> "Keep-out zone"
+    "tilt" -> "Base tilted"
+    "weather" -> "Weather"
+    "servo" -> "Servo fault"
+    "limit" -> "Limit switch"
+    "estop" -> "E-stop"
+    else -> rule.replace('_', ' ')
+}
+
+private fun waitingReason(rule: String) = when (rule) {
+    "sun_low" -> "the sun is high enough"
+    "no_time" -> "it has the time"
+    "weather" -> "the weather clears"
+    "unreachable" -> "the target is reachable"
+    else -> "conditions allow"
 }
 
 private fun List<Double>.toSkyPoint() = if (size >= 2) SkyPoint(this[0], this[1]) else null

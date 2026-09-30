@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -245,7 +246,7 @@ private fun Stepper(current: Int) {
     val steps = listOf(
         "Bluetooth" to Icons.Rounded.Bluetooth,
         "WiFi" to Icons.Rounded.Wifi,
-        "Done" to Icons.Rounded.Check,
+        "Done" to Icons.Rounded.Flag,
     )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         steps.forEachIndexed { index, (label, icon) ->

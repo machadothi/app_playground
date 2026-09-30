@@ -96,7 +96,7 @@ class HeliostatRepositoryImpl @Inject constructor(
         val message = body?.let { runCatching { json.decodeFromString<ErrorResponse>(it).error }.getOrNull() }
         Result.failure(IllegalStateException(message ?: "HTTP ${e.code()}"))
     } catch (e: IOException) {
-        Result.failure(IllegalStateException("Can't reach the heliostat (${e.message ?: "network error"})"))
+        Result.failure(IllegalStateException("No response (${e.message ?: "network error"})"))
     } catch (e: Exception) {
         Result.failure(e)
     }
