@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -25,6 +27,8 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -71,6 +75,8 @@ fun ProvisionScreen(
         onSsid = { viewModel.ssid = it },
         onPassword = { viewModel.password = it },
         onPick = viewModel::pick,
+        onRescan = { viewModel.rescan() },
+        onManual = viewModel::enterManually,
         onJoin = viewModel::join,
         onRetry = viewModel::connect,
         onDone = onDone,
@@ -86,6 +92,8 @@ fun ProvisionContent(
     onSsid: (String) -> Unit,
     onPassword: (String) -> Unit,
     onPick: (VisibleNetwork) -> Unit,
+    onRescan: () -> Unit,
+    onManual: () -> Unit,
     onJoin: () -> Unit,
     onRetry: () -> Unit,
     onDone: () -> Unit,
@@ -128,7 +136,8 @@ fun ProvisionContent(
                     }
                 }
 
-                is ProvisionUiState.Ready -> ReadyForm(state, ssid, password, onSsid, onPassword, onPick, onJoin)
+                is ProvisionUiState.Ready ->
+                    ReadyForm(state, ssid, password, onSsid, onPassword, onPick, onRescan, onManual, onJoin)
             }
         }
     }
@@ -142,102 +151,131 @@ private fun ReadyForm(
     onSsid: (String) -> Unit,
     onPassword: (String) -> Unit,
     onPick: (VisibleNetwork) -> Unit,
+    onRescan: () -> Unit,
+    onManual: () -> Unit,
     onJoin: () -> Unit,
 ) {
+    state.error?.let { Banner(it, BannerKind.Error, title = "Couldn't connect the heliostat") }
+    state.problems.forEach { Banner(it, BannerKind.Warning) }
+
     val phone = state.phone
-    when {
-        phone == null -> Banner(
-            "Couldn't read which WiFi network your phone is on. Type the network name, " +
-                "or pick one the heliostat can hear below.",
-            BannerKind.Info,
-        )
-
-        phone.is24GHz -> Banner("Your phone is on ${phone.ssid}. The heliostat will join the same network.", BannerKind.Info)
-
-        else -> Banner(
-            title = "${phone.ssid} is a 5 GHz network",
-            text = "The heliostat only has 2.4 GHz WiFi and can't join it." +
-                (state.suggestion?.let {
-                    " ${it.ssid} looks like the same router's 2.4 GHz network, so it's selected. " +
-                        "Routers usually use the same password for both."
-                } ?: " Pick a 2.4 GHz network the heliostat can hear, below."),
+    if (phone != null && !phone.is24GHz) {
+        Banner(
+            title = "Your phone is on ${phone.ssid}, a 5 GHz network",
+            text = "The heliostat only has 2.4 GHz WiFi. Pick its 2.4 GHz network below." +
+                (if (ssid.isNotBlank()) " $ssid is selected: routers usually use the same password for both." else ""),
             kind = BannerKind.Warning,
         )
     }
-    state.error?.let { Banner(it, BannerKind.Error, title = "Couldn't join") }
 
-    OutlinedTextField(
-        value = ssid,
-        onValueChange = onSsid,
-        label = { Text("Network name") },
-        leadingIcon = { Icon(Icons.Rounded.Wifi, contentDescription = null) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    var showPassword by remember { mutableStateOf(false) }
-    OutlinedTextField(
-        value = password,
-        onValueChange = onPassword,
-        label = { Text("Password") },
-        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-        trailingIcon = {
-            IconButton(onClick = { showPassword = !showPassword }) {
+    SectionCard(title = "Choose a network") {
+        Text(
+            "Networks the heliostat can hear from where it is.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when {
+            state.scanning && state.visible.isEmpty() -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("The heliostat is scanning…")
+            }
+
+            state.scanError != null -> Text(state.scanError, color = MaterialTheme.colorScheme.error)
+
+            state.visible.isEmpty() -> Text("No networks found.")
+        }
+        state.visible.take(10).forEachIndexed { index, network ->
+            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            val selected = !state.manual && network.ssid == ssid
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable { onPick(network) }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SignalBars(network.rssi)
+                Column(Modifier.weight(1f)) {
+                    Text(network.ssid, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        buildString {
+                            append("channel ${network.channel} · ${network.rssi} dBm")
+                            if (phone?.ssid == network.ssid) append(" · your phone's network")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Icon(
-                    if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                    contentDescription = if (showPassword) "Hide password" else "Show password",
+                    if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                    contentDescription = if (selected) "Selected" else null,
+                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                 )
             }
-        },
-        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Button(
-        onClick = onJoin,
-        enabled = ssid.isNotBlank(),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp),
-    ) { Text("Connect heliostat") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = onRescan, enabled = !state.scanning) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(if (state.scanning) "  Scanning…" else "  Scan again")
+            }
+            if (!state.manual) {
+                TextButton(onClick = onManual) { Text("Not listed? Type it") }
+            }
+        }
+    }
+
+    if (state.manual) {
+        OutlinedTextField(
+            value = ssid,
+            onValueChange = onSsid,
+            label = { Text("Network name") },
+            leadingIcon = { Icon(Icons.Rounded.Wifi, contentDescription = null) },
+            supportingText = { Text("Must be a 2.4 GHz network") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+
+    if (ssid.isNotBlank()) {
+        var showPassword by remember { mutableStateOf(false) }
+        OutlinedTextField(
+            value = password,
+            onValueChange = onPassword,
+            label = { Text("Password for $ssid") },
+            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+            trailingIcon = {
+                IconButton(onClick = { showPassword = !showPassword }) {
+                    Icon(
+                        if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = if (showPassword) "Hide password" else "Show password",
+                    )
+                }
+            },
+            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = onJoin,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+        ) { Text("Connect heliostat to $ssid") }
+    }
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
         Text(
-            if (state.locationSent) "Time and location sent" else "Time sent · location unavailable",
+            if (state.locationSent) "Time and location sent to the heliostat" else "Time sent · location unavailable",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-
-    if (state.visible.isNotEmpty()) {
-        SectionCard(title = "Networks the heliostat can hear") {
-            state.visible.take(8).forEachIndexed { index, network ->
-                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.small)
-                        .clickable { onPick(network) }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    SignalBars(network.rssi)
-                    Column(Modifier.weight(1f)) {
-                        Text(network.ssid, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "2.4 GHz · channel ${network.channel} · ${network.rssi} dBm",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (network.ssid == ssid) {
-                        Icon(Icons.Rounded.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-        }
     }
 }
 

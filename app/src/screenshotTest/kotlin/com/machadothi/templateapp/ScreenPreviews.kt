@@ -110,11 +110,12 @@ fun Provision5GHz() = MyApplicationTheme(darkTheme = true) {
     )
     ProvisionContent(
         state = ProvisionUiState.Ready(
-            phone = PhoneNetwork("MACHADO_HOME_5G", 5240), visible = visible,
-            suggestion = visible[1], locationSent = true, error = null,
+            phone = PhoneNetwork("MACHADO_HOME", 2412), visible = visible, scanning = false, scanError = null,
+            locationSent = true, problems = emptyList(), manual = false, error = null,
         ),
         ssid = "MACHADO_HOME", password = "secret-password",
-        onSsid = {}, onPassword = {}, onPick = {}, onJoin = {}, onRetry = {}, onDone = {}, onBack = {},
+        onSsid = {}, onPassword = {}, onPick = {}, onRescan = {}, onManual = {}, onJoin = {}, onRetry = {},
+        onDone = {}, onBack = {},
     )
 }
 
@@ -124,7 +125,8 @@ fun Provision5GHz() = MyApplicationTheme(darkTheme = true) {
 fun ProvisionJoined() = MyApplicationTheme(darkTheme = true) {
     ProvisionContent(
         state = ProvisionUiState.Joined("MACHADO_HOME", "192.168.50.77"), ssid = "MACHADO_HOME", password = "",
-        onSsid = {}, onPassword = {}, onPick = {}, onJoin = {}, onRetry = {}, onDone = {}, onBack = {},
+        onSsid = {}, onPassword = {}, onPick = {}, onRescan = {}, onManual = {}, onJoin = {}, onRetry = {},
+        onDone = {}, onBack = {},
     )
 }
 
